@@ -130,7 +130,6 @@ void Renderer::initImGui() {
 
     std::cout << "[IMGUI] 5/6 - LoadFunctions (volk loader)..." << std::endl;
 
-    // ⚠️ ImGui 1.91.5 – LoadFunctions przyjmuje 2 argumenty (loader + user_data)
     VkInstance rawInstance = (VkInstance)m_ctx.instance();
     ImGui_ImplVulkan_LoadFunctions(
         [](const char* function_name, void* user_data) -> PFN_vkVoidFunction {
@@ -343,7 +342,7 @@ void Renderer::createPipeline() {
     vk::PipelineMultisampleStateCreateInfo ms({}, vk::SampleCountFlagBits::e1);
     vk::PipelineDepthStencilStateCreateInfo ds({}, VK_TRUE, VK_TRUE, vk::CompareOp::eLess);
 
-    vk::PipelineColorBlendAttachmentState ba(VK_TRUE);
+vk::PipelineColorBlendAttachmentState ba(VK_FALSE);  // blendEnable = FALSE
     ba.setColorWriteMask(vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
         vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
     vk::PipelineColorBlendStateCreateInfo cb({}, VK_FALSE, {}, 1, &ba);
@@ -458,11 +457,17 @@ void Renderer::createSyncObjects() {
 }
 
 void Renderer::recreateSwapchain() {
+    // Sprawdz czy okno ma jeszcze sens (nie jest zminimalizowane / zamkniete)
+    if (m_window.width() == 0 || m_window.height() == 0) return;
+    if (m_window.shouldClose()) return;
+
     m_ctx.device().waitIdle();
+
     for (auto v : m_views) m_ctx.device().destroyImageView(v);
     m_views.clear();
     for (auto s : m_renderFinished) m_ctx.device().destroySemaphore(s);
     m_renderFinished.clear();
+
     m_ctx.device().destroyImageView(m_depthView);
     vmaDestroyImage(m_ctx.allocator(), m_depthImage, m_depthAlloc);
     m_ctx.device().destroySwapchainKHR(m_swapchain);
@@ -479,11 +484,31 @@ void Renderer::drawFrame(const Camera& cam, Scene& scene, GameState state,
     const std::function<void()>& uiCallback)
 {
     auto dev = m_ctx.device();
+
+    // Jesli okno jest zminimalizowane – pomijamy klatke
+    if (m_extent.width == 0 || m_extent.height == 0) return;
+
     dev.waitForFences(m_inFlight[m_frame], VK_TRUE, UINT64_MAX);
 
-    auto acq = dev.acquireNextImageKHR(m_swapchain, UINT64_MAX, m_imageAvailable[m_frame], nullptr);
-    if (acq.result == vk::Result::eErrorOutOfDateKHR) { recreateSwapchain(); return; }
-    uint32_t imageIndex = acq.value;
+    vk::Result acquireResult;
+    uint32_t imageIndex = 0;
+    try {
+        auto acq = dev.acquireNextImageKHR(m_swapchain, UINT64_MAX,
+            m_imageAvailable[m_frame], nullptr);
+        acquireResult = acq.result;
+        if (acquireResult == vk::Result::eErrorOutOfDateKHR ||
+            acquireResult == vk::Result::eSuboptimalKHR)
+        {
+            recreateSwapchain();
+            return;
+        }
+        imageIndex = acq.value;
+    }
+    catch (const vk::OutOfDateKHRError&) {
+        recreateSwapchain();
+        return;
+    }
+
     dev.resetFences(m_inFlight[m_frame]);
 
     struct CameraData {
@@ -553,6 +578,7 @@ void Renderer::drawFrame(const Camera& cam, Scene& scene, GameState state,
     cmd.setViewport(0, vk::Viewport(0, 0, (float)m_extent.width, (float)m_extent.height, 0, 1));
     cmd.setScissor(0, vk::Rect2D({ 0,0 }, m_extent));
 
+    // --- Meshe swiata ---
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_layout, 0, 1, &m_set, 0, nullptr);
 
@@ -570,6 +596,7 @@ void Renderer::drawFrame(const Camera& cam, Scene& scene, GameState state,
         meshes[obj.meshIndex].draw(cmd);
     }
 
+    // --- Skybox ---
     if (state == GameState::Playing || state == GameState::Paused) {
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_skyboxPipeline);
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_skyboxLayout, 0, 1,
@@ -577,6 +604,7 @@ void Renderer::drawFrame(const Camera& cam, Scene& scene, GameState state,
         cmd.draw(36, 1, 0, 0);
     }
 
+    // --- ImGui ---
     if (m_imguiInitialized) {
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -608,10 +636,31 @@ void Renderer::drawFrame(const Camera& cam, Scene& scene, GameState state,
     vk::SubmitInfo submit(1, &m_imageAvailable[m_frame], &waitStage, 1, &cmd, 1, &m_renderFinished[imageIndex]);
     m_ctx.graphicsQueue().submit(submit, m_inFlight[m_frame]);
 
+    // === Prezentacja z pelna obsluga bledow ===
     vk::PresentInfoKHR present(1, &m_renderFinished[imageIndex], 1, &m_swapchain, &imageIndex);
-    auto res = m_ctx.presentQueue().presentKHR(present);
-    if (res == vk::Result::eErrorOutOfDateKHR || res == vk::Result::eSuboptimalKHR || m_window.wasResized())
+
+    bool needRecreate = false;
+    try {
+        auto res = m_ctx.presentQueue().presentKHR(present);
+        if (res == vk::Result::eErrorOutOfDateKHR ||
+            res == vk::Result::eSuboptimalKHR)
+        {
+            needRecreate = true;
+        }
+    }
+    catch (const vk::OutOfDateKHRError&) {
+        needRecreate = true;
+    }
+    catch (const vk::SystemError& e) {
+        // Ignoruj bledy prezentacji przy zamykaniu okna
+        std::cerr << "[RENDERER] presentKHR: " << e.what() << std::endl;
+        // Nie przerywamy petli – nastepna klatka i tak sprawdzi shouldClose()
+        return;
+    }
+
+    if (needRecreate || m_window.wasResized()) {
         recreateSwapchain();
+    }
 
     m_frame = (m_frame + 1) % MAX_FRAMES;
 }

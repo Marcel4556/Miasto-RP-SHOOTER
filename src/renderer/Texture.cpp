@@ -3,7 +3,7 @@
 #include <cmath>
 
 // ============================================================
-//  VALUE NOISE (do generowania proceduralnych tekstur)
+//  VALUE NOISE
 // ============================================================
 static float hash2(int x, int y) {
     int n = x + y * 57;
@@ -54,7 +54,12 @@ void Texture::createFromPixels(VulkanContext& ctx, uint32_t w, uint32_t h, const
     VkBuffer staging; VmaAllocation stagingAlloc;
     VmaAllocationInfo info;
     vmaCreateBuffer(ctx.allocator(), &bi, &ai, &staging, &stagingAlloc, &info);
+
+    // === KOPIUJ DANE ===
     memcpy(info.pMappedData, rgba, (size_t)size);
+
+    // ⚠️ KRYTYCZNE: flush po memcpy, żeby dane dotarły do GPU
+    vmaFlushAllocation(ctx.allocator(), stagingAlloc, 0, size);
 
     // --- Image ---
     VkImageCreateInfo ici{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
@@ -115,7 +120,7 @@ void Texture::createFromPixels(VulkanContext& ctx, uint32_t w, uint32_t h, const
         { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 });
     m_view = ctx.device().createImageView(vi);
 
-    // --- Sampler (bez anizotropii – bezpieczne na każdym GPU) ---
+    // --- Sampler ---
     vk::SamplerCreateInfo si({}, vk::Filter::eLinear, vk::Filter::eLinear,
         vk::SamplerMipmapMode::eLinear,
         vk::SamplerAddressMode::eRepeat, vk::SamplerAddressMode::eRepeat,
@@ -131,10 +136,9 @@ void Texture::destroy(VulkanContext& ctx) {
 }
 
 // ============================================================
-//  GENERATORY PROCEDURALNE
+//  GENERATORY
 // ============================================================
 
-// --- Trawa ---
 std::vector<uint8_t> Texture::genGrass(uint32_t size) {
     std::vector<uint8_t> px(size * size * 4);
     for (uint32_t y = 0; y < size; ++y)
@@ -155,7 +159,6 @@ std::vector<uint8_t> Texture::genGrass(uint32_t size) {
     return px;
 }
 
-// --- Cegły ---
 std::vector<uint8_t> Texture::genBricks(uint32_t size) {
     std::vector<uint8_t> px(size * size * 4);
     int rows = 8, cols = 4;
@@ -183,7 +186,6 @@ std::vector<uint8_t> Texture::genBricks(uint32_t size) {
     return px;
 }
 
-// --- Kamień ---
 std::vector<uint8_t> Texture::genStone(uint32_t size) {
     std::vector<uint8_t> px(size * size * 4);
     for (uint32_t y = 0; y < size; ++y)
@@ -202,7 +204,6 @@ std::vector<uint8_t> Texture::genStone(uint32_t size) {
     return px;
 }
 
-// --- Drewno ---
 std::vector<uint8_t> Texture::genWood(uint32_t size) {
     std::vector<uint8_t> px(size * size * 4);
     for (uint32_t y = 0; y < size; ++y)
@@ -219,7 +220,6 @@ std::vector<uint8_t> Texture::genWood(uint32_t size) {
     return px;
 }
 
-// --- Liście ---
 std::vector<uint8_t> Texture::genLeaves(uint32_t size) {
     std::vector<uint8_t> px(size * size * 4);
     for (uint32_t y = 0; y < size; ++y)
@@ -239,7 +239,6 @@ std::vector<uint8_t> Texture::genLeaves(uint32_t size) {
     return px;
 }
 
-// --- Metal ---
 std::vector<uint8_t> Texture::genMetal(uint32_t size) {
     std::vector<uint8_t> px(size * size * 4);
     for (uint32_t y = 0; y < size; ++y)
@@ -256,7 +255,6 @@ std::vector<uint8_t> Texture::genMetal(uint32_t size) {
     return px;
 }
 
-// --- Checker (szachownica) ---
 std::vector<uint8_t> Texture::genChecker(uint32_t size, uint32_t squares,
     glm::vec3 a, glm::vec3 b)
 {
@@ -276,7 +274,6 @@ std::vector<uint8_t> Texture::genChecker(uint32_t size, uint32_t squares,
     return px;
 }
 
-// --- Bullet Hole (czarny ślad po kuli) ---
 std::vector<uint8_t> Texture::genBulletHole(uint32_t size) {
     std::vector<uint8_t> px(size * size * 4);
     float c = size * 0.5f;
@@ -287,26 +284,13 @@ std::vector<uint8_t> Texture::genBulletHole(uint32_t size) {
             float dy = (y - c) / c;
             float d = std::sqrt(dx * dx + dy * dy);
 
-            // Szum dla efektu "spalenizny"
             float noise = fbm(x * 0.15f, y * 0.15f, 3) * 0.15f;
 
-            float v;   // jasność (0 = czarny, 1 = biały)
-            if (d < 0.35f) {
-                // Środek – czarna dziura
-                v = 0.02f + noise * 0.5f;
-            }
-            else if (d < 0.55f) {
-                // Ciemny pierścień spalenizny
-                v = 0.05f + noise * 0.8f;
-            }
-            else if (d < 0.75f) {
-                // Szara obwódka (ślad)
-                v = 0.10f + (0.75f - d) * 0.4f + noise;
-            }
-            else {
-                // Reszta – jasna szara (żeby ładnie odcinał się na każdej teksturze)
-                v = 0.25f + noise;
-            }
+            float v;
+            if (d < 0.35f)      v = 0.02f + noise * 0.5f;
+            else if (d < 0.55f) v = 0.05f + noise * 0.8f;
+            else if (d < 0.75f) v = 0.10f + (0.75f - d) * 0.4f + noise;
+            else                v = 0.25f + noise;
 
             v = glm::clamp(v, 0.0f, 1.0f);
             uint8_t val = (uint8_t)(v * 255);

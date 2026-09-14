@@ -3,10 +3,10 @@
 #include <cmath>
 #include <stdexcept>
 
-// Kolor nieba w danym kierunku (gradient + słońce)
+// Kolor nieba w danym kierunku
 static glm::vec3 skyColor(glm::vec3 dir) {
     dir = glm::normalize(dir);
-    float t = dir.y;  // -1 (dół) do 1 (góra)
+    float t = dir.y;
 
     glm::vec3 zenith(0.10f, 0.32f, 0.72f);
     glm::vec3 mid(0.42f, 0.62f, 0.88f);
@@ -24,11 +24,10 @@ static glm::vec3 skyColor(glm::vec3 dir) {
         color = glm::mix(horizon, nadir, -t);
     }
 
-    // Słońce – zgrane z kierunkiem światła w mesh.frag
     glm::vec3 sunDir = glm::normalize(glm::vec3(-0.4f, 1.0f, -0.3f));
     float sunDot = glm::max(glm::dot(dir, sunDir), 0.0f);
-    float sun = std::pow(sunDot, 256.0f);        // mały jasny punkt
-    float glow = std::pow(sunDot, 16.0f) * 0.35f; // miękka poświata
+    float sun = std::pow(sunDot, 256.0f);
+    float glow = std::pow(sunDot, 16.0f) * 0.35f;
     color += glm::vec3(1.0f, 0.95f, 0.75f) * (sun * 3.0f + glow);
 
     return color;
@@ -47,12 +46,12 @@ void Cubemap::createProcedural(VulkanContext& ctx, uint32_t size) {
 
                 glm::vec3 dir;
                 switch (face) {
-                case 0: dir = { 1, -v, -u }; break; // +X
-                case 1: dir = { -1, -v,  u }; break; // -X
-                case 2: dir = { u,  1,  v }; break; // +Y
-                case 3: dir = { u, -1, -v }; break; // -Y
-                case 4: dir = { u, -v,  1 }; break; // +Z
-                case 5: dir = { -u, -v, -1 }; break; // -Z
+                case 0: dir = { 1, -v, -u }; break;
+                case 1: dir = { -1, -v,  u }; break;
+                case 2: dir = { u,  1,  v }; break;
+                case 3: dir = { u, -1, -v }; break;
+                case 4: dir = { u, -v,  1 }; break;
+                case 5: dir = { -u, -v, -1 }; break;
                 }
 
                 glm::vec3 c = skyColor(dir);
@@ -65,11 +64,12 @@ void Cubemap::createProcedural(VulkanContext& ctx, uint32_t size) {
         }
     }
 
-    // Staging
+    // --- Staging ---
     VkBufferCreateInfo bi{ VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
     bi.size = totalSize;
     bi.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
     VmaAllocationCreateInfo ai{};
     ai.usage = VMA_MEMORY_USAGE_AUTO;
     ai.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
@@ -79,9 +79,13 @@ void Cubemap::createProcedural(VulkanContext& ctx, uint32_t size) {
     VmaAllocation stagingAlloc;
     VmaAllocationInfo stagingInfo;
     vmaCreateBuffer(ctx.allocator(), &bi, &ai, &staging, &stagingAlloc, &stagingInfo);
+
     memcpy(stagingInfo.pMappedData, data.data(), totalSize);
 
-    // Cubemap image
+    // ⚠️ KRYTYCZNE: flush
+    vmaFlushAllocation(ctx.allocator(), stagingAlloc, 0, totalSize);
+
+    // --- Cubemap image ---
     VkImageCreateInfo ici{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
     ici.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
     ici.imageType = VK_IMAGE_TYPE_2D;
@@ -100,7 +104,6 @@ void Cubemap::createProcedural(VulkanContext& ctx, uint32_t size) {
     vmaCreateImage(ctx.allocator(), &ici, &iai, &rawImage, &m_alloc, nullptr);
     m_image = vk::Image(rawImage);
 
-    // Copy + transitiony
     ctx.submitImmediate([&](vk::CommandBuffer cmd) {
         vk::ImageMemoryBarrier2 toDst;
         toDst.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe;
@@ -117,11 +120,9 @@ void Cubemap::createProcedural(VulkanContext& ctx, uint32_t size) {
         std::vector<vk::BufferImageCopy> regions;
         for (uint32_t face = 0; face < 6; ++face) {
             vk::BufferImageCopy r(
-                face * faceSize,
-                0, 0,
+                face * faceSize, 0, 0,
                 { vk::ImageAspectFlagBits::eColor, 0, face, 1 },
-                { 0, 0, 0 },
-                { size, size, 1 });
+                { 0, 0, 0 }, { size, size, 1 });
             regions.push_back(r);
         }
         cmd.copyBufferToImage(staging, m_image,
@@ -143,13 +144,13 @@ void Cubemap::createProcedural(VulkanContext& ctx, uint32_t size) {
 
     vmaDestroyBuffer(ctx.allocator(), staging, stagingAlloc);
 
-    // Image view – cubemap
+    // --- Image view ---
     vk::ImageViewCreateInfo vi({}, m_image, vk::ImageViewType::eCube,
         vk::Format::eR8G8B8A8Srgb, {},
         { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6 });
     m_view = ctx.device().createImageView(vi);
 
-    // Sampler – clamp to edge (dla cubemapy)
+    // --- Sampler ---
     vk::SamplerCreateInfo si({}, vk::Filter::eLinear, vk::Filter::eLinear,
         vk::SamplerMipmapMode::eLinear,
         vk::SamplerAddressMode::eClampToEdge, vk::SamplerAddressMode::eClampToEdge,

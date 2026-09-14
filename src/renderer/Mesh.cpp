@@ -71,11 +71,12 @@ Mesh Mesh::makeCube(VulkanContext& ctx, glm::vec3 c) {
 
 Mesh Mesh::makeGround(VulkanContext& ctx, float size, glm::vec3 c) {
     float u = size * 0.5f;
+    // Kolejnosc tak, zeby normalna z winding wskazywala w GORE (+Y)
     std::vector<Vertex> v = {
-        {{-size, 0, -size}, {0,1,0}, c, { 0,  0 }},
-        {{ size, 0, -size}, {0,1,0}, c, { u,  0 }},
-        {{ size, 0,  size}, {0,1,0}, c, { u,  u }},
-        {{-size, 0,  size}, {0,1,0}, c, { 0,  u }}
+        {{-size, 0,  size}, {0,1,0}, c, { 0,  u }},   // front-left
+        {{ size, 0,  size}, {0,1,0}, c, { u,  u }},   // front-right
+        {{ size, 0, -size}, {0,1,0}, c, { u,  0 }},   // back-right
+        {{-size, 0, -size}, {0,1,0}, c, { 0,  0 }}    // back-left
     };
     std::vector<uint32_t> idx = { 0,1,2, 0,2,3 };
     Mesh m;

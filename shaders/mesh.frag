@@ -12,7 +12,7 @@ layout(push_constant) uniform Push {
 } pc;
 
 layout(set = 0, binding = 0) uniform Camera {
-    mat4 view;
+    mat4 view;       // <-- musi być!
     mat4 proj;
     vec4 camPos;
 } cam;
