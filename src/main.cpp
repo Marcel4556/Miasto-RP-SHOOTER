@@ -37,12 +37,14 @@ int main() {
         GameState state = GameState::MainMenu;
         bool wantsQuit = false;
 
-        camera.position = glm::vec3(0.0f, 2.5f, 12.0f);
+        camera.position = glm::vec3(0.0f, 1.7f, 12.0f);
         camera.yaw = -90.0f;
         camera.pitch = -8.0f;
 
         auto last = std::chrono::high_resolution_clock::now();
         std::cout << "[MAIN] Miasto RP Shooter gotowe\n";
+        std::cout << "[MAIN] F11 - fullscreen | WASD - ruch | SPACE - skok\n";
+        std::cout << "[MAIN] LSHIFT - sprint | LCTRL - kucanie | ESC - pauza\n";
 
         while (!window.shouldClose() && !wantsQuit) {
             window.pollEvents();
@@ -52,7 +54,13 @@ int main() {
             last = now;
             if (dt > 0.1f) dt = 0.1f;
 
-            // ESC – pauza/wznowienie
+            // === F11 - fullscreen ===
+            if (Input::keyPressed(GLFW_KEY_F11)) {
+                window.toggleFullscreen();
+                menu.m_fullscreen = window.isFullscreen();
+            }
+
+            // === ESC - pauza ===
             if (Input::keyPressed(GLFW_KEY_ESCAPE)) {
                 if (state == GameState::Playing)      state = GameState::Paused;
                 else if (state == GameState::Paused)  state = GameState::Playing;
@@ -61,22 +69,19 @@ int main() {
             Input::setCursorMode(state == GameState::Playing);
 
             if (state == GameState::Playing) {
-                // Ruch
-                auto oldPos = camera.position;
-                camera.update(dt);
-                if (!scene->canMoveTo(camera.position))
-                    camera.position = oldPos;
+                // === Fizyka + kolizje ===
+                camera.update(dt, [&](glm::vec3 p, float r) {
+                    return scene->canMoveTo(p, r);
+                    });
 
                 // === SHOOT ===
                 if (Input::mouseDown(GLFW_MOUSE_BUTTON_LEFT)) {
                     if (scene->weapon().tryFire()) {
-                        // Raycast
                         glm::vec3 origin = camera.position;
                         glm::vec3 dir = glm::normalize(camera.front);
 
                         RayHit hit = scene->raycast(origin, dir, 100.0f);
                         if (hit.hit) {
-                            // Sprawdz czy trafilismy wroga
                             auto& objs = scene->objects();
                             if (hit.objectIndex >= 0 &&
                                 objs[hit.objectIndex].isEnemy)
@@ -84,21 +89,15 @@ int main() {
                                 auto& e = objs[hit.objectIndex];
                                 e.hp -= 30;
                                 e.hitFlashTimer = 0.15f;
-
-                                // HITMARKER
-                                // (ustawiane przez scene - dodamy)
+                                scene->hitMarker(0.2f);
+                                scene->scoreRef() += 100;
 
                                 if (e.hp <= 0) {
-                                    // Zabity – respawn
-                                    // score += 100
-                                    // W tej wersji: respawn w miejscu
                                     e.hp = 100;
-                                    // Przesun w losowe miejsce
-                                    // (uproszczone – respawn w miejscu)
+                                    scene->scoreRef() += 500;
                                 }
                             }
                             else {
-                                // Trafiona sciana – decal
                                 scene->spawnDecal(hit.point, hit.normal);
                             }
                         }
@@ -111,7 +110,7 @@ int main() {
                 }
             }
             else if (state == GameState::MainMenu) {
-                // Auto-orbit
+                // Auto-orbit kamery w menu
                 camera.yaw += dt * 8.0f;
                 camera.pitch = -6.0f;
                 float cy = std::cos(glm::radians(camera.yaw));
@@ -126,6 +125,14 @@ int main() {
             renderer->drawFrame(camera, *scene, state, [&]() {
                 menu.draw(state, camera, wantsQuit, *scene);
                 });
+
+            // === Fullscreen toggle z menu ===
+            if (menu.m_pendingFullscreenToggle) {
+                menu.m_pendingFullscreenToggle = false;
+                if (window.isFullscreen() != menu.m_fullscreen) {
+                    window.setFullscreen(menu.m_fullscreen);
+                }
+            }
 
             Input::endFrame();
         }

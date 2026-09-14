@@ -29,6 +29,7 @@ namespace Col {
     constexpr ImU32 BLACK = IM_COL32(0, 0, 0, 255);
     constexpr ImU32 GREEN = IM_COL32(80, 220, 100, 255);
     constexpr ImU32 YELLOW = IM_COL32(255, 200, 60, 255);
+    constexpr ImU32 CYAN = IM_COL32(80, 200, 220, 255);
 }
 
 // ============================================================
@@ -182,7 +183,7 @@ static void drawTopBar(float t) {
         dl->AddText(f, fs, ImVec2(60, y), Col::RED_DIM, "SYS.CORE");
         dl->AddText(f, fs, ImVec2(60 + 80, y), Col::WHITE, "ONLINE");
         dl->AddText(f, fs, ImVec2(60 + 145, y), Col::GRAY_DARK, "|");
-        dl->AddText(f, fs, ImVec2(60 + 165, y), Col::GRAY, "v0.4");
+        dl->AddText(f, fs, ImVec2(60 + 165, y), Col::GRAY, "v0.5");
     }
 
     {
@@ -218,7 +219,7 @@ static void drawTopBar(float t) {
 // ============================================================
 //  TYTUŁ
 // ============================================================
-static void drawTitle(float t) {
+static void drawTitle(float t, const char* subtitle = "TACTICAL URBAN SHOOTER") {
     ImGuiIO& io = ImGui::GetIO();
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     if (!F_HUGE) return;
@@ -309,7 +310,7 @@ static void drawTitle(float t) {
         ImFont* subF = F_LARGE ? F_LARGE : F_HUGE;
         float subSize = subF->FontSize * 0.62f;
 
-        std::string typed = typedText("TACTICAL URBAN SHOOTER", t, 22.0f, 0.8f);
+        std::string typed = typedText(subtitle, t, 22.0f, 0.8f);
         ImVec2 subSz = subF->CalcTextSizeA(subSize, FLT_MAX, 0.0f, typed.c_str());
         dl->AddText(subF, subSize, ImVec2(cx - subSz.x * 0.5f, subY),
             Col::RED_DIM, typed.c_str());
@@ -519,9 +520,9 @@ static void drawTelemetry(float t) {
 }
 
 // ============================================================
-//  HUD W GRZE – HP / AMMO / SCORE / RELOAD / HITMARKER
+//  HUD W GRZE
 // ============================================================
-static void drawInGameHUD(Scene& scene, float t) {
+static void drawInGameHUD(Scene& scene, const Camera& cam, float t) {
     ImGuiIO& io = ImGui::GetIO();
     ImDrawList* dl = ImGui::GetForegroundDrawList();
     ImFont* f = F_TINY ? F_TINY : ImGui::GetFont();
@@ -531,11 +532,11 @@ static void drawInGameHUD(Scene& scene, float t) {
 
     const Weapon& w = scene.weapon();
 
-    // ==================== LEWY DOL: HP ====================
+    // ==================== LEWY DOL: HP + STAMINA ====================
     {
         float x = 60;
-        float y = io.DisplaySize.y - 130;
-        float w2 = 220, h2 = 56;
+        float y = io.DisplaySize.y - 175;
+        float w2 = 220, h2 = 105;
 
         dl->AddRectFilled(ImVec2(x, y), ImVec2(x + w2, y + h2),
             IM_COL32(8, 8, 10, 210));
@@ -543,64 +544,86 @@ static void drawInGameHUD(Scene& scene, float t) {
             Col::GRAY_LINE, 0, 0, 1.0f);
         dl->AddRectFilled(ImVec2(x, y), ImVec2(x + 4, y + h2), Col::RED);
 
+        // HP
         dl->AddText(f, fs, ImVec2(x + 14, y + 6), Col::RED_DIM, "ZYCIE");
 
-        // HP bar
         float hpPct = scene.hp() / 100.0f;
         float barX = x + 14, barY = y + 26;
         float barW = w2 - 28, barH = 10;
 
         dl->AddRectFilled(ImVec2(barX, barY), ImVec2(barX + barW, barY + barH),
             IM_COL32(30, 10, 12, 255));
-        // Wypełnienie – kolor zależny od HP
         ImU32 hpCol = (hpPct > 0.5f) ? Col::GREEN
             : (hpPct > 0.25f) ? Col::YELLOW : Col::RED;
-
         dl->AddRectFilled(ImVec2(barX, barY),
             ImVec2(barX + barW * hpPct, barY + barH), hpCol);
-
-        // Segmentacja
         for (int s = 1; s < 10; ++s) {
             float sx = barX + barW * (s / 10.0f);
             dl->AddLine(ImVec2(sx, barY), ImVec2(sx, barY + barH),
                 Col::BLACK, 1.0f);
         }
-
         dl->AddRect(ImVec2(barX, barY), ImVec2(barX + barW, barY + barH),
             Col::GRAY_LINE, 0, 0, 1.0f);
 
-        // HP text
-        char hpBuf[16];
-        std::snprintf(hpBuf, sizeof(hpBuf), "%d", scene.hp());
-        ImVec2 hs = fBody->CalcTextSizeA(fBody->FontSize, FLT_MAX, 0.0f, hpBuf);
-        dl->AddText(fBody, fBody->FontSize,
-            ImVec2(x + w2 - hs.x - 12, y + 20),
-            Col::WHITE, hpBuf);
+        // STAMINA
+        dl->AddText(f, fs, ImVec2(x + 14, y + 50), Col::RED_DIM, "STAMINA");
+
+        float stamPct = cam.staminaPercent();
+        float stamY = y + 70;
+        dl->AddRectFilled(ImVec2(barX, stamY), ImVec2(barX + barW, stamY + barH),
+            IM_COL32(20, 18, 10, 255));
+
+        ImU32 stamCol;
+        if (cam.sprinting)         stamCol = IM_COL32(255, 180, 60, 255);
+        else if (stamPct > 0.5f)   stamCol = IM_COL32(0, 255, 255, 255);
+        else if (stamPct > 0.25f)  stamCol = IM_COL32(255, 255, 0, 255);
+        else                       stamCol = IM_COL32(220, 80, 60, 255);
+
+        dl->AddRectFilled(ImVec2(barX, stamY),
+            ImVec2(barX + barW * stamPct, stamY + barH), stamCol);
+        for (int s = 1; s < 10; ++s) {
+            float sx = barX + barW * (s / 10.0f);
+            dl->AddLine(ImVec2(sx, stamY), ImVec2(sx, stamY + barH),
+                Col::BLACK, 1.0f);
+        }
+        dl->AddRect(ImVec2(barX, stamY), ImVec2(barX + barW, stamY + barH),
+            Col::GRAY_LINE, 0, 0, 1.0f);
+
+        // Status
+        if (cam.sprinting) {
+            dl->AddText(f, fs, ImVec2(x + 14, y + h2 - 18),
+                IM_COL32(255, 180, 60, 255), ">> SPRINT");
+        }
+        else if (cam.crouching) {
+            dl->AddText(f, fs, ImVec2(x + 14, y + h2 - 18),
+                IM_COL32(120, 200, 255, 255), "v  KUCA");
+        }
+        else if (stamPct < 0.2f) {
+            dl->AddText(f, fs, ImVec2(x + 14, y + h2 - 18),
+                IM_COL32(220, 80, 60, 255), "!  ZMECZONY");
+        }
     }
 
     // ==================== PRAWY DOL: AMMO ====================
     {
         float w2 = 220, h2 = 76;
         float x = io.DisplaySize.x - w2 - 60;
-        float y = io.DisplaySize.y - 130 + 56 + 12;
+        float y = io.DisplaySize.y - 175 + 105 + 12;
 
         dl->AddRectFilled(ImVec2(x, y), ImVec2(x + w2, y + h2),
             IM_COL32(8, 8, 10, 210));
         dl->AddRect(ImVec2(x, y), ImVec2(x + w2, y + h2),
             Col::GRAY_LINE, 0, 0, 1.0f);
-        // Prawa czerwona belka
         dl->AddRectFilled(ImVec2(x + w2 - 4, y), ImVec2(x + w2, y + h2), Col::RED);
 
         dl->AddText(f, fs, ImVec2(x + 12, y + 6), Col::RED_DIM, "AMUNICJA");
 
-        // Ammo text (duzy)
         char ammoBuf[16];
         std::snprintf(ammoBuf, sizeof(ammoBuf), "%02d", w.ammoInMag);
         ImU32 ammoCol = (w.ammoInMag > 0) ? Col::WHITE : Col::RED_BRIGHT;
         dl->AddText(fBody, fBody->FontSize * 1.3f,
             ImVec2(x + 12, y + 26), ammoCol, ammoBuf);
 
-        // /max
         char maxBuf[16];
         std::snprintf(maxBuf, sizeof(maxBuf), "/ %d", w.reserveAmmo);
         ImVec2 asz = fBody->CalcTextSizeA(fBody->FontSize * 1.3f, FLT_MAX, 0.0f, ammoBuf);
@@ -608,7 +631,6 @@ static void drawInGameHUD(Scene& scene, float t) {
             ImVec2(x + 16 + asz.x, y + 36),
             Col::GRAY, maxBuf);
 
-        // Pasek magazynka
         int bars = 10;
         int filled = (w.magSize > 0) ? (w.ammoInMag * bars / w.magSize) : 0;
         float barW = (w2 - 24 - (bars - 1) * 3) / bars;
@@ -619,13 +641,11 @@ static void drawInGameHUD(Scene& scene, float t) {
             dl->AddRectFilled(ImVec2(bx, barY), ImVec2(bx + barW, barY + 6), c);
         }
 
-        // Reload indicator
         if (w.isReloading) {
             float rp = w.reloadProgress();
             dl->AddText(fSmall, fSmall->FontSize,
                 ImVec2(x + 12, y + h2 + 6),
                 Col::YELLOW, "PRZELADOWANIE...");
-            // Bar pod panel
             dl->AddRectFilled(ImVec2(x, y + h2 + 22),
                 ImVec2(x + w2, y + h2 + 26),
                 IM_COL32(30, 30, 32, 255));
@@ -635,7 +655,7 @@ static void drawInGameHUD(Scene& scene, float t) {
         }
     }
 
-    // ==================== LEWY GÓR: SCORE ====================
+    // ==================== LEWY GORNY: SCORE ====================
     {
         float x = 60;
         float y = 80;
@@ -655,7 +675,7 @@ static void drawInGameHUD(Scene& scene, float t) {
             ImVec2(x + 14, y + 20), Col::WHITE, scoreBuf);
     }
 
-    // ==================== PRAWY GÓR: FPS ====================
+    // ==================== PRAWY GORNY: FPS ====================
     {
         float panelW = 100;
         float x = io.DisplaySize.x - panelW - 60;
@@ -671,11 +691,10 @@ static void drawInGameHUD(Scene& scene, float t) {
             ImVec2(x + 10, y + 5), Col::WHITE, fpsBuf);
     }
 
-    // ==================== MUZZLE FLASH (dolny ekran, subtelny) ====================
+    // Muzzle flash
     if (w.muzzleFlashTimer > 0.0f) {
         float flashPct = w.muzzleFlashTimer / w.muzzleFlashDuration;
         int alpha = (int)(80 * flashPct);
-        // Delikatny pomaranczowy blysk na dole ekranu
         dl->AddRectFilledMultiColor(
             ImVec2(io.DisplaySize.x * 0.3f, io.DisplaySize.y),
             ImVec2(io.DisplaySize.x * 0.7f, io.DisplaySize.y - 200),
@@ -683,9 +702,9 @@ static void drawInGameHUD(Scene& scene, float t) {
             IM_COL32(255, 180, 60, alpha), IM_COL32(255, 180, 60, alpha));
     }
 
-    // ==================== HIT MARKER ====================
+    // Hit marker
     if (scene.hitMarkerTimer() > 0.0f) {
-        float t01 = scene.hitMarkerTimer() / 0.2f; // 1 -> 0
+        float t01 = scene.hitMarkerTimer() / 0.2f;
         int alpha = (int)(255 * t01);
         ImVec2 c(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
         float len = 8.0f + (1.0f - t01) * 6.0f;
@@ -704,7 +723,7 @@ static void drawInGameHUD(Scene& scene, float t) {
 }
 
 // ============================================================
-//  GŁÓWNE WEJŚCIE
+//  GLOWNE WEJSCIE
 // ============================================================
 void Menu::draw(GameState& state, Camera& camera, bool& wantsQuit, Scene& scene) {
     if (!F_TINY) loadFonts();
@@ -715,13 +734,16 @@ void Menu::draw(GameState& state, Camera& camera, bool& wantsQuit, Scene& scene)
         if (m_showSettings) drawSettings(state, camera);
         else                drawMainMenu(state, wantsQuit);
         break;
+    case GameState::MultiplayerMenu:
+        drawMultiplayerMenu(state);
+        break;
     case GameState::Paused:
         if (m_showSettings) drawSettings(state, camera);
         else                drawPauseMenu(state, wantsQuit);
         break;
     case GameState::Playing:
         drawCrosshair();
-        drawInGameHUD(scene, t);
+        drawInGameHUD(scene, camera, t);
         drawHudCorners(t);
         break;
     default: break;
@@ -729,19 +751,19 @@ void Menu::draw(GameState& state, Camera& camera, bool& wantsQuit, Scene& scene)
 }
 
 // ============================================================
-//  EKRAN TYTUŁOWY
+//  EKRAN TYTUŁOWY (4 przyciski)
 // ============================================================
 void Menu::drawMainMenu(GameState& state, bool& wantsQuit) {
     ImGuiIO& io = ImGui::GetIO();
     float t = (float)ImGui::GetTime();
 
     drawBackdrop(t);
-    drawTitle(t);
+    drawTitle(t, "TACTICAL URBAN SHOOTER");
 
     ImGui::SetNextWindowPos(
-        ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.73f),
+        ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.76f),
         ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(460, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(480, 0), ImGuiCond_Always);
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
@@ -753,13 +775,15 @@ void Menu::drawMainMenu(GameState& state, bool& wantsQuit) {
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize |
         ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 8));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 6));
 
-    if (tacticalButton("01", "GRAJ", "START", "btn_play", 62.0f, true))
+    if (tacticalButton("01", "SINGLE PLAYER", "KAMPANIA", "btn_sp", 58.0f, true))
         state = GameState::Playing;
-    if (tacticalButton("02", "USTAWIENIA", "OPCJE", "btn_settings", 54.0f))
+    if (tacticalButton("02", "MULTIPLAYER", "ONLINE", "btn_mp", 52.0f))
+        state = GameState::MultiplayerMenu;
+    if (tacticalButton("03", "USTAWIENIA", "OPCJE", "btn_settings", 46.0f))
         m_showSettings = true;
-    if (tacticalButton("03", "WYJSCIE", "KONIEC", "btn_quit", 54.0f))
+    if (tacticalButton("04", "WYJSCIE", "KONIEC", "btn_quit", 46.0f))
         wantsQuit = true;
 
     ImGui::PopStyleVar();
@@ -770,6 +794,239 @@ void Menu::drawMainMenu(GameState& state, bool& wantsQuit) {
     drawHudCorners(t);
     drawTopBar(t);
     drawTelemetry(t);
+}
+
+// ============================================================
+//  EKRAN MULTIPLAYER
+// ============================================================
+void Menu::drawMultiplayerMenu(GameState& state) {
+    ImGuiIO& io = ImGui::GetIO();
+    float t = (float)ImGui::GetTime();
+
+    drawBackdrop(t);
+    drawTitle(t, "MULTIPLAYER // ONLINE");
+    drawTopBar(t);
+    drawHudCorners(t);
+
+    // ============ LISTA SERWERÓW (fake) ============
+    struct FakeServer {
+        const char* name;
+        const char* mode;
+        const char* region;
+        int         players;
+        int         maxPlayers;
+        int         ping;
+    };
+    static const FakeServer servers[6] = {
+        { "MIASTO RP  #1",     "RP",         "PL",  24, 32,  18 },
+        { "MIASTO RP  #2",     "RP",         "PL",  12, 32,  24 },
+        { "DEATHMATCH ONLY",   "DEATHMATCH", "EU",   8, 16,  42 },
+        { "POLISH FORCES",     "TEAM DM",    "PL",  16, 24,  31 },
+        { "NIGHT CITY",        "RP",         "DE",   6, 32,  55 },
+        { "HARDCORE SHOOTER",  "TDM",        "EU",   2, 12,  68 }
+    };
+
+    // Panel listy serwerow – wysrodkowany, wyzej
+    ImGui::SetNextWindowPos(
+        ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.48f),
+        ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(720, 0), ImGuiCond_Always);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.02f, 0.03f, 0.92f));
+
+    ImGui::Begin("##MPServers", nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+    ImDrawList* wdl = ImGui::GetWindowDrawList();
+
+    // Naglowek
+    {
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        float w = ImGui::GetContentRegionAvail().x;
+        ImVec2 hdrSize(w, 42);
+        ImGui::InvisibleButton("##mphdr", hdrSize);
+
+        wdl->AddRectFilled(p, ImVec2(p.x + 4, p.y + hdrSize.y), Col::RED);
+        wdl->AddRectFilled(p, ImVec2(p.x + w, p.y + 1), Col::GRAY_LINE);
+        wdl->AddRectFilled(ImVec2(p.x, p.y + hdrSize.y - 1),
+            ImVec2(p.x + w, p.y + hdrSize.y), Col::GRAY_LINE);
+
+        ImFont* fL = F_LARGE ? F_LARGE : ImGui::GetFont();
+        if (fL) {
+            ImVec2 ts = fL->CalcTextSizeA(fL->FontSize * 0.75f, FLT_MAX, 0.0f, "LISTA SERWEROW");
+            wdl->AddText(fL, fL->FontSize * 0.75f,
+                ImVec2(p.x + 20, p.y + (hdrSize.y - ts.y) * 0.5f),
+                Col::WHITE, "LISTA SERWEROW");
+        }
+
+        ImFont* fS = F_SMALL ? F_SMALL : ImGui::GetFont();
+        const char* refresh = "ODSWIEZ [F5]";
+        ImVec2 rs = fS->CalcTextSizeA(fS->FontSize, FLT_MAX, 0.0f, refresh);
+        wdl->AddText(fS, fS->FontSize,
+            ImVec2(p.x + w - rs.x - 20, p.y + (hdrSize.y - rs.y) * 0.5f),
+            Col::GRAY, refresh);
+    }
+
+    // Naglowki kolumn
+    {
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        float w = ImGui::GetContentRegionAvail().x;
+        ImVec2 rowH(0, 24);
+        ImGui::InvisibleButton("##mphdrCols", ImVec2(w, rowH.y));
+
+        ImFont* f = F_TINY ? F_TINY : ImGui::GetFont();
+        float fs = f->FontSize;
+
+        wdl->AddRectFilled(p, ImVec2(p.x + w, p.y + rowH.y),
+            IM_COL32(15, 15, 18, 220));
+
+        wdl->AddText(f, fs, ImVec2(p.x + 20, p.y + 5), Col::GRAY, "NAZWA");
+        wdl->AddText(f, fs, ImVec2(p.x + 260, p.y + 5), Col::GRAY, "TRYB");
+        wdl->AddText(f, fs, ImVec2(p.x + 400, p.y + 5), Col::GRAY, "REGION");
+        wdl->AddText(f, fs, ImVec2(p.x + 490, p.y + 5), Col::GRAY, "GRACZE");
+        wdl->AddText(f, fs, ImVec2(p.x + 590, p.y + 5), Col::GRAY, "PING");
+        wdl->AddText(f, fs, ImVec2(p.x + 660, p.y + 5), Col::GRAY, "STATUS");
+    }
+
+    // Wiersze serwerow
+    for (int i = 0; i < 6; ++i) {
+        const auto& srv = servers[i];
+
+        ImGui::PushID(i);
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        float w = ImGui::GetContentRegionAvail().x;
+        ImVec2 rowSize(w, 38);
+
+        ImGui::InvisibleButton("##srv", rowSize);
+        bool hovered = ImGui::IsItemHovered();
+        bool clicked = ImGui::IsItemClicked();
+
+        if (clicked) m_selectedServer = i;
+
+        bool selected = (m_selectedServer == i);
+
+        ImU32 bg;
+        if (selected)      bg = IM_COL32(35, 8, 12, 240);
+        else if (hovered)  bg = IM_COL32(20, 5, 8, 230);
+        else               bg = IM_COL32(10, 10, 12, 200);
+
+        wdl->AddRectFilled(p, ImVec2(p.x + w, p.y + rowSize.y), bg);
+
+        // Lewy pasek - tylko gdy wybrany/hover
+        if (selected || hovered) {
+            wdl->AddRectFilled(p, ImVec2(p.x + 3, p.y + rowSize.y),
+                selected ? Col::RED : Col::RED_DARK);
+        }
+
+        // Separator dolny
+        wdl->AddRectFilled(
+            ImVec2(p.x, p.y + rowSize.y - 1),
+            ImVec2(p.x + w, p.y + rowSize.y),
+            IM_COL32(30, 30, 34, 255));
+
+        ImFont* f = F_SMALL ? F_SMALL : ImGui::GetFont();
+        float fs = f->FontSize;
+
+        // Nazwa
+        wdl->AddText(f, fs, ImVec2(p.x + 20, p.y + 11),
+            selected ? Col::WHITE : Col::WHITE_DIM, srv.name);
+        // Tryb
+        wdl->AddText(f, fs, ImVec2(p.x + 260, p.y + 11),
+            Col::GRAY, srv.mode);
+        // Region
+        wdl->AddText(f, fs, ImVec2(p.x + 400, p.y + 11),
+            Col::GRAY_DARK, srv.region);
+
+        // Gracze (kolor: zielony gdy luz, zolty gdy duzo)
+        char players[16];
+        std::snprintf(players, sizeof(players), "%d / %d", srv.players, srv.maxPlayers);
+        float fill = (float)srv.players / (float)srv.maxPlayers;
+        ImU32 pCol = (fill > 0.85f) ? Col::YELLOW
+            : (fill > 0.6f) ? Col::WHITE_DIM
+            : Col::GREEN;
+        wdl->AddText(f, fs, ImVec2(p.x + 490, p.y + 11), pCol, players);
+
+        // Ping (zielony < 30, zolty < 60, czerwony >)
+        char ping[16];
+        std::snprintf(ping, sizeof(ping), "%d ms", srv.ping);
+        ImU32 pingCol = (srv.ping < 30) ? Col::GREEN
+            : (srv.ping < 60) ? Col::YELLOW
+            : Col::RED;
+        wdl->AddText(f, fs, ImVec2(p.x + 590, p.y + 11), pingCol, ping);
+
+        // Status
+        const char* status = "ONLINE";
+        ImU32 statCol = Col::GREEN;
+        wdl->AddText(f, fs, ImVec2(p.x + 660, p.y + 11), statCol, status);
+
+        ImGui::PopID();
+    }
+
+    ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
+
+    // ============ PRZYCISKI AKCJI (dol) ============
+    ImGui::SetNextWindowPos(
+        ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.82f),
+        ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(720, 0), ImGuiCond_Always);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
+
+    ImGui::Begin("##MPActions", nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 6));
+
+    if (tacticalButton("H", "HOSTUJ SERWER", "STWORZ", "btn_host", 52.0f, true)) {
+        // TODO: state = GameState::HostGame;
+        state = GameState::Playing;
+    }
+    if (tacticalButton("J", "DOLACZ DO SERWERA", "WYBRANY", "btn_join", 52.0f)) {
+        // TODO: dolacz do wybranego m_selectedServer
+        state = GameState::Playing;
+    }
+    if (tacticalButton("F5", "ODSWIEZ LISTE", "F5", "btn_refresh", 44.0f)) {
+        // Fake refresh
+    }
+    if (tacticalButton("ESC", "POWROT", "MENU", "btn_back", 44.0f)) {
+        state = GameState::MainMenu;
+    }
+
+    ImGui::PopStyleVar();
+    ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
+
+    // Info o wybranym serwerze na dole
+    {
+        ImDrawList* dl = ImGui::GetForegroundDrawList();
+        ImFont* f = F_TINY ? F_TINY : ImGui::GetFont();
+        float fs = f->FontSize;
+        char buf[128];
+        std::snprintf(buf, sizeof(buf), "WYBRANO: %s  |  %s  |  %s  |  %d/%d GRACZY",
+            servers[m_selectedServer].name,
+            servers[m_selectedServer].mode,
+            servers[m_selectedServer].region,
+            servers[m_selectedServer].players,
+            servers[m_selectedServer].maxPlayers);
+
+        ImVec2 ts = f->CalcTextSizeA(fs, FLT_MAX, 0.0f, buf);
+        dl->AddText(f, fs,
+            ImVec2((io.DisplaySize.x - ts.x) * 0.5f, io.DisplaySize.y - 42),
+            Col::GRAY_DARK, buf);
+    }
 }
 
 // ============================================================
@@ -811,7 +1068,7 @@ void Menu::drawSettings(GameState& state, Camera& camera) {
                 Col::WHITE, "USTAWIENIA");
         }
         if (F_SMALL) {
-            const char* num = "02 / OPCJE";
+            const char* num = "03 / OPCJE";
             ImVec2 ns = F_SMALL->CalcTextSizeA(F_SMALL->FontSize, FLT_MAX, 0.0f, num);
             wdl->AddText(F_SMALL, F_SMALL->FontSize,
                 ImVec2(p.x + w - ns.x - 20, p.y + (hdrSize.y - ns.y) * 0.5f),
@@ -825,11 +1082,9 @@ void Menu::drawSettings(GameState& state, Camera& camera) {
 
     ImGui::TextColored(ImVec4(0.88f, 0.06f, 0.12f, 1.0f), "GRAFIKA");
     ImGui::Spacing();
-    const char* resolutions[] = { "1280 x 720", "1600 x 900", "1920 x 1080", "2560 x 1440" };
-    ImGui::SetNextItemWidth(-1);
-    ImGui::Combo("##res", &m_resolutionIdx, resolutions, IM_ARRAYSIZE(resolutions));
-    ImGui::TextColored(ImVec4(0.4f, 0.4f, 0.42f, 1.0f), "Rozdzielczosc");
-    ImGui::Checkbox("Pelny ekran", &m_fullscreen);
+    bool fsPrev = m_fullscreen;
+    ImGui::Checkbox("Pelny ekran (F11)", &m_fullscreen);
+    if (m_fullscreen != fsPrev) m_pendingFullscreenToggle = true;
 
     ImGui::Spacing(); ImGui::Spacing();
 
@@ -843,9 +1098,12 @@ void Menu::drawSettings(GameState& state, Camera& camera) {
     ImGui::Spacing(); ImGui::Spacing();
 
     ImGui::TextColored(ImVec4(0.88f, 0.06f, 0.12f, 1.0f), "STEROWANIE W GRZE");
-    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.52f, 1.0f), "LPM - strzal");
-    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.52f, 1.0f), "R - przeladuj");
-    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.52f, 1.0f), "ESC - pauza");
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.52f, 1.0f), "WASD - ruch");
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.52f, 1.0f), "SPACE - skok");
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.52f, 1.0f), "LCTRL - kucanie");
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.52f, 1.0f), "LSHIFT - sprint (stamina!)");
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.52f, 1.0f), "LPM - strzal | R - przeladuj");
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.52f, 1.0f), "F11 - fullscreen | ESC - pauza");
 
     ImGui::Spacing(); ImGui::Spacing();
 

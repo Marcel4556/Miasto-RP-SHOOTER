@@ -66,9 +66,15 @@ public:
     Weapon& weapon() { return m_weapon; }
     const Weapon& weapon() const { return m_weapon; }
 
-    int   score()    const { return m_score; }
-    int   hp()       const { return m_hp; }
-    float hitMarkerTimer() const { return m_hitMarkerTimer; }
+    // === Gettery ===
+    int   score()           const { return m_score; }
+    int   hp()              const { return m_hp; }
+    float hitMarkerTimer()  const { return m_hitMarkerTimer; }
+
+    // === Settery (dla main.cpp) ===
+    int& scoreRef() { return m_score; }
+    int& hpRef() { return m_hp; }
+    void  hitMarker(float time) { m_hitMarkerTimer = time; }
 
     bool canMoveTo(glm::vec3 pos, float radius = 0.4f) const;
 
@@ -85,7 +91,6 @@ private:
     int   m_hp = 100;
     float m_hitMarkerTimer = 0.0f;
 
-    // Indeksy mesh-y w m_meshes
     static constexpr int MESH_GROUND = 0;
     static constexpr int MESH_CUBE = 1;
     static constexpr int MESH_QUAD = 2;

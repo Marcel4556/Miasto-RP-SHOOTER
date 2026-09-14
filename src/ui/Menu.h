@@ -9,8 +9,12 @@ class Menu {
 public:
     void draw(GameState& state, Camera& camera, bool& wantsQuit, Scene& scene);
 
+    bool m_pendingFullscreenToggle = false;
+    bool m_fullscreen = false;
+
 private:
     void drawMainMenu(GameState& state, bool& wantsQuit);
+    void drawMultiplayerMenu(GameState& state);
     void drawSettings(GameState& state, Camera& camera);
     void drawPauseMenu(GameState& state, bool& wantsQuit);
     void drawHUD(Scene& scene);
@@ -21,6 +25,8 @@ private:
     float m_volumeMaster = 0.8f;
     float m_volumeMusic = 0.5f;
     float m_volumeSfx = 0.7f;
-    bool  m_fullscreen = false;
     int   m_resolutionIdx = 1;
+
+    // Wybrany serwer na liscie multiplayer
+    int m_selectedServer = 0;
 };
